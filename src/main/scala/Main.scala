@@ -1,4 +1,5 @@
-import adapter.{FcmAdapter, ReservationAdapter, ScheduleAdapter, UserAdapter}
+import adapter.in.KafkaNotificationStreams
+import adapter.{FcmAdapter, KafkaNotificationProducer, ReservationAdapter, ScheduleAdapter, UserAdapter}
 import akka.actor.ActorSystem
 import application.NotificationService
 
@@ -7,7 +8,7 @@ import infra.in.Routes
 import config.{FirebaseConfig, Server}
 import infra.out.{GrpcReservationClient, GrpcScheduleClient, GrpcUserClient}
 import scheduler.NotificationScheduler
-import test.TestService
+
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -27,21 +28,25 @@ object Main {
     val userAdapter = new UserAdapter(grpcUserClient)
     val fcmAdapter = new FcmAdapter()
 
+    val kafkaProducerPort = new KafkaNotificationProducer()
+
     // NotificationService 인스턴스 생성 (비즈니스 로직 담당)
     val notificationService = new NotificationService(
       scheduleAdapter,
       reservationAdapter,
       userAdapter,
-      fcmAdapter
+      fcmAdapter,
+      kafkaProducerPort
     )
+
+    // Kafka Streams 실행 (Inbound Adapter)
+    val kafkaStreams = new KafkaNotificationStreams(notificationService)
+    kafkaStreams.startStream()
 
     // Scheduler 실행 (매일 4AM 실행)
     new NotificationScheduler(notificationService)
 
     println("Notification Service Started!")
-
-    val testService = new TestService(grpcScheduleClient, grpcReservationClient, grpcUserClient,fcmAdapter)
-    testService.runAllTests()
 
     Server.start(Routes.route)
   }
